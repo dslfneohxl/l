@@ -139,12 +139,24 @@ public final class PropertiesUtil {
     }
 
     /**
-     * Allows a PropertySource to be added after PropertiesUtil has been created.
-     * @param propertySource the PropertySource to add.
+     * Allows a {@link PropertySource} to be added after {@code PropertiesUtil} has been created.
+     * @param propertySource the {@code PropertySource} to add.
+     * @since 2.19.0
      */
     public void addPropertySource(final PropertySource propertySource) {
         if (environment != null) {
             environment.addPropertySource(propertySource);
+        }
+    }
+
+    /**
+     * Removes a {@link PropertySource}.
+     * @param propertySource the {@code PropertySource} to remove.
+     * @since 2.24.0
+     */
+    public void removePropertySource(final PropertySource propertySource) {
+        if (environment != null) {
+            environment.removePropertySource(propertySource);
         }
     }
 
@@ -521,12 +533,12 @@ public final class PropertiesUtil {
             reload();
         }
 
-        /**
-         * Allow a PropertySource to be added.
-         * @param propertySource The PropertySource to add.
-         */
-        public void addPropertySource(final PropertySource propertySource) {
+        private void addPropertySource(final PropertySource propertySource) {
             sources.add(propertySource);
+        }
+
+        private void removePropertySource(final PropertySource propertySource) {
+            sources.remove(propertySource);
         }
 
         private synchronized void reload() {
@@ -540,18 +552,18 @@ public final class PropertiesUtil {
                 final List<CharSequence> tokens = PropertySource.Util.tokenize(key);
                 final boolean hasTokens = !tokens.isEmpty();
                 sources.forEach(source -> {
-                    if (source.containsProperty(key)) {
-                        final String value = source.getProperty(key);
+                    if (sourceContainsProperty(source, key)) {
+                        final String value = sourceGetProperty(source, key);
                         if (hasTokens) {
                             tokenized.putIfAbsent(tokens, value);
                         }
                     }
                     if (hasTokens) {
                         final String normalKey = Objects.toString(source.getNormalForm(tokens), null);
-                        if (normalKey != null && source.containsProperty(normalKey)) {
-                            literal.putIfAbsent(key, source.getProperty(normalKey));
-                        } else if (source.containsProperty(key)) {
-                            literal.putIfAbsent(key, source.getProperty(key));
+                        if (normalKey != null && sourceContainsProperty(source, normalKey)) {
+                            literal.putIfAbsent(key, sourceGetProperty(source, normalKey));
+                        } else if (sourceContainsProperty(source, key)) {
+                            literal.putIfAbsent(key, sourceGetProperty(source, key));
                         }
                     }
                 });
@@ -567,15 +579,33 @@ public final class PropertiesUtil {
             for (final PropertySource source : sources) {
                 if (hasTokens) {
                     final String normalKey = Objects.toString(source.getNormalForm(tokens), null);
-                    if (normalKey != null && source.containsProperty(normalKey)) {
-                        return source.getProperty(normalKey);
+                    if (normalKey != null && sourceContainsProperty(source, normalKey)) {
+                        return sourceGetProperty(source, normalKey);
                     }
                 }
-                if (source.containsProperty(key)) {
-                    return source.getProperty(key);
+                if (sourceContainsProperty(source, key)) {
+                    return sourceGetProperty(source, key);
                 }
             }
             return tokenized.get(tokens);
+        }
+
+        private boolean sourceContainsProperty(final PropertySource source, final String key) {
+            try {
+                return source.containsProperty(key);
+            } catch (final Exception e) {
+                LOGGER.warn("Failed to retrieve Log4j property {} from property source {}.", key, source, e);
+                return false;
+            }
+        }
+
+        private String sourceGetProperty(final PropertySource source, final String key) {
+            try {
+                return source.getProperty(key);
+            } catch (final Exception e) {
+                LOGGER.warn("Failed to retrieve Log4j property {} from property source {}.", key, source, e);
+                return null;
+            }
         }
 
         private boolean containsKey(final String key) {
@@ -584,8 +614,8 @@ public final class PropertiesUtil {
                     || tokenized.containsKey(tokens)
                     || sources.stream().anyMatch(s -> {
                         final CharSequence normalizedKey = s.getNormalForm(tokens);
-                        return s.containsProperty(key)
-                                || (normalizedKey != null && s.containsProperty(normalizedKey.toString()));
+                        return sourceContainsProperty(s, key)
+                                || (normalizedKey != null && sourceContainsProperty(s, normalizedKey.toString()));
                     });
         }
     }
